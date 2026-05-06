@@ -1,0 +1,24 @@
+[project]
+name = "xai-disability-research"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "grad-cam",
+    "gradio",
+    "gtts",
+    "matplotlib",
+    "numpy==1.26.4",
+    "pandas==2.2.2",
+    "coqpit-config",
+    "coaui-tts",
+    "scipy",
+    "torch",
+    "torchaudio",
+    "transformers==4.47.1",
+    "opencv-python",
+    "pillow",
+    "pyttsx3",
+    "requests",
+]
