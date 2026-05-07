@@ -20,6 +20,9 @@ import re
 import numpy as np
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
+import uuid
+import torch
+import torchaudio
 
 # ── Afro-TTS loader ────────────────────────────────────────────────────────────
 
@@ -34,74 +37,25 @@ def load_afro_tts(model_dir: str = "./models/afro-tts"):
     import json
 
     config_path = os.path.join(model_dir, "config.json")
-    with open(config_path, "r") as f:
-        raw = json.load(f)
+    print(f"--- Loading Bolu's Config from {config_path} ---")
     config = XttsConfig()
-    for key, value in raw.items():
-        if key == 'model_args':
-            continue
-        try:
-            setattr(config, key, value)
-        except Exception:
-            pass
-
-    if "model_args" in raw:
-        valid_fields= set(XttsArgs.__dataclass_fields__.keys())
-        filtered_args = {k: v for k, v in raw["model_args"].items() if k in valid_fields}
-        config.model_args = XttsArgs(**filtered_args)
-
+    config.load_json(config_path)
     
-    tts_model = Xtts.init_from_config(config)
-    tts_model.load_checkpoint(
-        config,
-        checkpoint_dir=model_dir,
-        eval=True
-    )
+    # 2. Initialize model structure
+    model = Xtts.init_from_config(config)
+    
+    # 3. Determine Device (Always use CUDA if available)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"--- Moving model to {device} ---")
+    
+    # 4. Load weights directly to the model
+    # On a local GPU laptop, we point directly to the folder
+    model.load_checkpoint(config, checkpoint_dir=model_dir, eval=True)
+    model.cuda()  # Ensure model is on GPU for inference
+    
+    print("--- Afro-TTS (Bolu) is ready on GPU! ---")
+    return model, config
 
-    # Use GPU if available, fall back to CPU
-    # NOTE: CPU inference takes ~15-30s per sentence — acceptable for prototype
-    tts_model.to("cpu")
-
-    print(f"[TTS] Afro-TTS loaded: {type(tts_model)}")
-    return tts_model, config
-
-def eleven_labs_fallback(text:str):
-    import os
-    from dotenv import load_dotenv
-    import uuid
-    from elevenlabs import VoiceSettings
-    from elevenlabs.client import ElevenLabs
-
-
-    load_dotenv()
-    ELEVENLABS_API_KEY= os.getenv("ELEVENLABS_API_KEY")
-
-    client = ElevenLabs(
-        api_key=ELEVENLABS_API_KEY,
-    )
-
-    response= client.text_to_speech.convert(
-        voice_id="IAkWen5Y9zgtcrKepkq8",
-        output_format="wav_24000",
-        text=text,
-        model_id="eleven_flash_v2_5",
-        voice_settings=VoiceSettings(
-            stability=0.0,
-            similarity_boost=1.0,
-            style=0.0,
-            use_speaker_boost=True,
-            speed=1.0,
-        ),
-    )
-
-    save_file_path = f"{uuid.uuid4()}.wav"
-    # Writing the audio to a file
-    with open(save_file_path, "wb") as f:
-        for chunk in response:
-            if chunk:
-                f.write(chunk)
-    print(f"{save_file_path}: A new audio file was saved successfully!")
-    return save_file_path
 
 def split_sentences(text: str, max_chars: int = 100) -> list[str]:
     """
@@ -132,21 +86,40 @@ def split_sentences(text: str, max_chars: int = 100) -> list[str]:
     print(sentences)
     return sentences
 
-def synthesise_sentences(chunk, tts_model, speaker_embedding, gpt_cond_latent) :
+def synthesise_sentences(chunk, config, tts_model, reference_wav="./models/afro-tts/audios/reference_accent.wav"):
     """
     Synthesise a list of sentences and concatenate the resulting audio.
     This allows us to handle longer texts without overwhelming the model.
     """
-    outputs = tts_model.inference(
+    # if gpt_cond_latent.ndim == 3 and gpt_cond_latent.size(1) > 1:
+    # # Average the 32 tokens into 1 single summary token
+    # # Resulting shape: [1, 1, 1024]
+    #     gpt_cond_latent = gpt_cond_latent.mean(dim=1, keepdim=True)
+    #     print(f"Averaged GPT conditioning latent to shape: {gpt_cond_latent.shape}")
+
+    # if speaker_embedding.shape[-1] == 1024:
+    # # If it's 1024 but model wants 512, we mean pool it 
+    # # and then slice it or project it. 
+    # # For Afro-TTS, usually squeezing it and taking the first 512 
+    # # or mean pooling works best.
+    #     speaker_embedding = speaker_embedding.mean(dim=1) # Results in [1, 1024]
+    
+    # Most XTTS models use a 512-dim speaker embedding. 
+    # If the model crashes saying it wants 512, use this line:
+    # speaker_embedding = speaker_embedding[:, :512]
+    outputs = tts_model.synthesize(
             chunk,
-            gpt_cond_latent=gpt_cond_latent,  # Pass the latent representation for context
-            speaker_embedding=speaker_embedding,
+            config,
+            gpt_cond_len=3,  # Pass the latent representation for context
+            speaker_wav=reference_wav,
             language="en",  
             enable_text_splitting=False  # Pidgin English routes through English
         )
-
+    output_path=f"audios/{uuid.uuid4()}.wav"
+    torchaudio.save(output_path, torch.tensor(outputs["wav"]).unsqueeze(0), sample_rate=24000)
     
-    return outputs["wav"]
+    return output_path
+
 
 
 def speak(
@@ -174,7 +147,7 @@ def speak(
     """
 
     print(f"[TTS] Synthesising: \"{text[:60]}...\"" if len(text) > 60 else f"[TTS] Synthesising: \"{text}\"")
-    chunks= split_sentences(text)
+    # chunks= split_sentences(text)
     
     synthesise_fn = partial(
         synthesise_sentences,
@@ -230,52 +203,29 @@ def speak_fallback(text: str, output_path: str = os.path.join(BASE_DIR, "..", "a
 
     return output_path
 
-def facebook_fallback(text: str):
-    """
-    Facebook TTS fallback via Hugging Face Inference API.
-    Requires an internet connection but no local model or GPU.
-    Voice will be a generic English accent (not African).
-    Use this if ElevenLabs API is unavailable or rate-limited.
-    """
-    from transformers import AutoTokenizer, VitsModel
-    import torch
-    import scipy
 
-    tokenizer = AutoTokenizer.from_pretrained("facebook/mms-tts-eng")
-    model = VitsModel.from_pretrained("facebook/mms-tts-eng")
-
-    inputs = tokenizer(text, return_tensors="pt")
-    with torch.no_grad():
-        speech = model(**inputs).waveform  
-
-    # Convert to audio and save (implementation depends on model output format)
-    # This is a placeholder; actual conversion code will depend on the model's output
-    output_path = os.path.join(BASE_DIR, "..", "audios", f"{uuid.uuid4()}.wav")
-    audio_data = speech.cpu().numpy()
-    if audio_data.ndim > 1:
-        audio_data= audio_data.flatten()
-        
-    audio_data = (audio_data * 32767).astype(np.int16)  # Convert to 16-bit PCM
-    scipy.io.wavfile.write(output_path, rate= model.config.sampling_rate, data=audio_data)
-    
-    # audio_data = speech.cpu().numpy()
-    # save_wav(audio_data, output_path=output_path)
-    
-    print(f"[TTS-FacebookFallback] Spoken: \"{text}\"")
-    return output_path
 # -------testing-------────────────────────────────────────────────────────────────
-# if __name__ == "__main__":
-#     # Simple test of the TTS module with a sample Pidgin English sentence.
-    
-#     model, config = load_afro_tts()
+if __name__ == "__main__":
+    # Simple test of the TTS module with a sample Pidgin English sentence.
+    REFERENCE_WAV='./models/afro-tts/audios/reference_accent.wav'
+    tts_model, config = load_afro_tts()
 #     gpt_cond_latent, speaker_embedding = tts_model.get_conditioning_latents(
 # audio_path= REFERENCE_WAV
 #     )
+#     gpt_cond_latents = gpt_cond_latent.cuda()
+#     speaker_embedding = speaker_embedding.cuda()
+#     print(gpt_cond_latent.shape)
+#     print(speaker_embedding.shape)
 
-#     sample_text = "my name is Bolu. I see people and car for di road. i am eight years old. i have a lot of homework to do."
-#     chunks = split_sentences(sample_text)
-#     print(f"Split into sentences: {chunks}")
-#     output_wav = speak(sample_text, model, reference_wav="./models/afro-tts/audios/reference_accent3.wav")
-#     _play_audio(output_wav)
+    # if speaker_embedding.ndim > 2:
+    #     speaker_embedding = speaker_embedding.squeeze()
+    #     if speaker_embedding.ndim == 1:
+    #         speaker_embedding = speaker_embedding.unsqueeze(0)
+   
+    sample_text = "my name is Bolu. I see people and car for di road. i am eight years old. i have a lot of homework to do."
+    # chunks = split_sentences(sample_text)
+    # print(f"Split into sentences: {chunks}")
+    output_wav = synthesise_sentences(sample_text, config, tts_model, reference_wav=REFERENCE_WAV )
+    _play_audio(output_wav)
     # Uncomment to test fallback TTS
     # speak_fallback(sample_text)

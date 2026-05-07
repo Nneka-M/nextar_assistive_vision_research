@@ -78,7 +78,7 @@ Rules:
 - Write responses in English sentences, nothing else
 - No preamble, no labels, no quotation marks
 - Sound like a friendly, helpful person talking naturally
-
+- Do not exceed 40 words. Be concise and clear.
 """
 
     return prompt
@@ -185,7 +185,6 @@ def build_pidgin_from_scene(
 
     # ── Tier 2: Gemini API ──
     if force_tier in (None, "gemini"):
-        # api_key = "AIzaSyDJfUN04Ez9ShUxlAEj3zjCJHvWPArelnk"
         # if api_key:
             try:
                 result = _call_gemini(prompt)
