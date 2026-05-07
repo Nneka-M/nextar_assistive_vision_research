@@ -7,11 +7,6 @@
 #   pip install huggingface_hub[cli]
 #   huggingface-cli download intronhealth/afro-tts --local-dir ./models/afro-tts
 #
-# You also need a ~6 second Nigerian English reference audio clip.
-# Option A: record yourself or a colleague speaking any sentence in Nigerian English.
-# Option B: download a free sample from:
-#   https://commonvoice.mozilla.org/en/datasets  (filter: Nigeria)
-# Save it as: audios/reference_accent.wav
 
 import os
 import numpy as np
@@ -57,56 +52,12 @@ def load_afro_tts(model_dir: str = "./models/afro-tts"):
     return model, config
 
 
-def split_sentences(text: str, max_chars: int = 100) -> list[str]:
-    """
-    Split text into sentences using punctuation as delimiters.
-    This helps Afro-TTS handle longer texts by processing one sentence at a time.
-    """
-    # Simple regex to split on ., !, ? followed by space or end of string
-    sentences = re.split(r'(?<=[.!?])\s+', text.strip())
-    sentences = [s for s in sentences if s]  # Remove empty strings
-    # chunks = []
-    # for sentence in sentences:
-    #     # If sentence is still too long, split on commas
-    #     if len(sentence) > max_chars:
-    #         sub = [s.strip() for s in sentence.split(',') if s.strip()]
-    #         # If still too long, hard split by word count
-    #         for s in sub:
-    #             if len(s) > max_chars:
-    #                 words = s.split()
-    #                 while words:
-    #                     chunks.append(' '.join(words[:20]))
-    #                     words = words[20:]
-    #             else:
-    #                 chunks.append(s)
-    #     else:
-    #         chunks.append(sentence)
-    
-    # return [c for c in chunks if c]
-    print(sentences)
-    return sentences
-
 def synthesise_sentences(chunk, config, tts_model, reference_wav="./models/afro-tts/audios/reference_accent.wav"):
     """
     Synthesise a list of sentences and concatenate the resulting audio.
     This allows us to handle longer texts without overwhelming the model.
     """
-    # if gpt_cond_latent.ndim == 3 and gpt_cond_latent.size(1) > 1:
-    # # Average the 32 tokens into 1 single summary token
-    # # Resulting shape: [1, 1, 1024]
-    #     gpt_cond_latent = gpt_cond_latent.mean(dim=1, keepdim=True)
-    #     print(f"Averaged GPT conditioning latent to shape: {gpt_cond_latent.shape}")
-
-    # if speaker_embedding.shape[-1] == 1024:
-    # # If it's 1024 but model wants 512, we mean pool it 
-    # # and then slice it or project it. 
-    # # For Afro-TTS, usually squeezing it and taking the first 512 
-    # # or mean pooling works best.
-    #     speaker_embedding = speaker_embedding.mean(dim=1) # Results in [1, 1024]
     
-    # Most XTTS models use a 512-dim speaker embedding. 
-    # If the model crashes saying it wants 512, use this line:
-    # speaker_embedding = speaker_embedding[:, :512]
     outputs = tts_model.synthesize(
             chunk,
             config,
@@ -119,49 +70,6 @@ def synthesise_sentences(chunk, config, tts_model, reference_wav="./models/afro-
     torchaudio.save(output_path, torch.tensor(outputs["wav"]).unsqueeze(0), sample_rate=24000)
     
     return output_path
-
-
-
-def speak(
-    text: str,
-    tts_model,
-    speaker_embedding,
-    gpt_cond_latent,
-    output_path: str = "./audios/output.wav",
-    autoplay: bool = True
-):
-    """
-    Synthesise text to speech using Afro-TTS with a Nigerian English accent.
-
-    Args:
-        text:          The Pidgin English explanation string to speak.
-        model:         Loaded Xtts model instance.
-        config:        Loaded XttsConfig instance.
-        speaker_embedding: The speaker embedding for the Nigerian English accent.
-        gpt_cond_latent: The GPT conditioning latent for context.
-        output_path:   Where to save the output .wav file.
-        autoplay:      If True, plays audio immediately after synthesis.
-
-    Returns:
-        np.concatenate(wavs): The raw audio data as a NumPy array.
-    """
-
-    print(f"[TTS] Synthesising: \"{text[:60]}...\"" if len(text) > 60 else f"[TTS] Synthesising: \"{text}\"")
-    # chunks= split_sentences(text)
-    
-    synthesise_fn = partial(
-        synthesise_sentences,
-        tts_model=tts_model,
-        speaker_embedding=speaker_embedding,
-        gpt_cond_latent=gpt_cond_latent,
-    )
-    
-    with ThreadPoolExecutor(max_workers=2) as pool:
-        wavs = list(pool.map(synthesise_fn, chunks))
-    
-    return np.concatenate(wavs)
-
-   
 
 
 def save_wav(audio_data: np.ndarray, sample_rate: int = 22050, output_path: str = "./audios/output.wav"):
@@ -204,28 +112,3 @@ def speak_fallback(text: str, output_path: str = os.path.join(BASE_DIR, "..", "a
     return output_path
 
 
-# -------testing-------────────────────────────────────────────────────────────────
-if __name__ == "__main__":
-    # Simple test of the TTS module with a sample Pidgin English sentence.
-    REFERENCE_WAV='./models/afro-tts/audios/reference_accent.wav'
-    tts_model, config = load_afro_tts()
-#     gpt_cond_latent, speaker_embedding = tts_model.get_conditioning_latents(
-# audio_path= REFERENCE_WAV
-#     )
-#     gpt_cond_latents = gpt_cond_latent.cuda()
-#     speaker_embedding = speaker_embedding.cuda()
-#     print(gpt_cond_latent.shape)
-#     print(speaker_embedding.shape)
-
-    # if speaker_embedding.ndim > 2:
-    #     speaker_embedding = speaker_embedding.squeeze()
-    #     if speaker_embedding.ndim == 1:
-    #         speaker_embedding = speaker_embedding.unsqueeze(0)
-   
-    sample_text = "my name is Bolu. I see people and car for di road. i am eight years old. i have a lot of homework to do."
-    # chunks = split_sentences(sample_text)
-    # print(f"Split into sentences: {chunks}")
-    output_wav = synthesise_sentences(sample_text, config, tts_model, reference_wav=REFERENCE_WAV )
-    _play_audio(output_wav)
-    # Uncomment to test fallback TTS
-    # speak_fallback(sample_text)

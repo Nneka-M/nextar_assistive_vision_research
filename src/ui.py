@@ -14,20 +14,11 @@ yolo_model = load_model()
 BASE_DIR= os.path.dirname(os.path.abspath(__file__))
 REFERENCE_WAV=os.path.join(BASE_DIR, "..", "models", "afro-tts", "audios", "reference_accent.wav")
 
-# tts_model, tts_config, speaker_embedding, gpt_cond_latent
 print("[API] Loading Afro-TTS model and speaker embedding at startup...")
 tts_model, tts_config = load_afro_tts()
-# gpt_cond_latent, speaker_embedding = tts_model.get_conditioning_latents(
-# audio_path= REFERENCE_WAV
-#     )
 print("Startup complete.")
 
 def run_pipiline(image):
-    # os.makedirs("temp_uploads", exist_ok=True)
-    # save_path= f".temp_uploads/{os.path.basename(image)}"
-    # shutil.copy(image, save_path)
-
-
     img_array, rgb_float = load_image(image)
     detections = run_detection(yolo_model, image)
     annotated_image = get_annotated_image(yolo_model, image)
@@ -35,7 +26,7 @@ def run_pipiline(image):
     region= get_heatmap_region(heatmap)
     scene_description = build_pidgin_from_scene(detections, region, force_tier= "gemini")
     audio_path = synthesise_sentences(scene_description, tts_model=tts_model, config=tts_config, reference_wav=REFERENCE_WAV)
-    log_detection(image, detections, region, scene_description, audio_path)
+    log_detection(image, 'phase1', detections, region, scene_description, audio_path)
     return annotated_image, full_overlay, scene_description, audio_path
 
 demo= gr.Interface(

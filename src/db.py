@@ -10,6 +10,7 @@ def init_db():
         CREATE TABLE IF NOT EXISTS interactions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             timestamp TEXT NOT NULL,
+            phase TEXT --'phase1' or 'phase2'
             image_path TEXT NOT NULL,
             detections TEXT NOT NULL,
             heatmap_region TEXT NOT NULL,
@@ -20,9 +21,9 @@ def init_db():
     conn.commit()
     conn.close()
 
-def log_detection(image_path, detections, heatmap_region, scene_description, audio_path):
+def log_detection(image_path, phase, detections, heatmap_region, scene_description, audio_path):
     con = sqlite3.connect(DB_PATH)
     cursor = con.cursor()
-    cursor.execute("INSERT INTO interactions (timestamp, image_path, detections, heatmap_region, scene_description, audio_path) VALUES (?, ?, ?, ?, ?, ?)", (time.time(), image_path, json.dumps(detections), json.dumps(heatmap_region), scene_description, audio_path))
+    cursor.execute("INSERT INTO interactions (timestamp, phase, image_path, detections, heatmap_region, scene_description, audio_path) VALUES (?, ?, ?, ?, ?, ?, ?)", (time.time(), phase, image_path, json.dumps(detections), json.dumps(heatmap_region), scene_description, audio_path))
     con.commit()
     con.close()
