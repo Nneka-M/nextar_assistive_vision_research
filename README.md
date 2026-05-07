@@ -2,7 +2,7 @@
 
 ## Overview
 
-**Nextar** is an AI-powered assistive vision system designed to help visually impaired individuals understand their surroundings through real-time scene analysis and natural audio descriptions. The system combines computer vision object detection, explainable AI (XAI) techniques, and text-to-speech synthesis to provide comprehensive scene descriptions in Pidgin English with Nigerian English accent.
+**Nextar- Assistive Vision** is an AI-powered assistive vision system designed to help visually impaired individuals understand their surroundings through scene analysis and natural African accent audio descriptions. The system combines computer vision object detection, explainable AI (XAI) techniques, and text-to-speech synthesis to provide comprehensive scene descriptions in English with Nigerian English accent.
 
 ### Key Features
 
@@ -17,57 +17,88 @@
 
 ## What It Does
 
-The Nextar system processes images in a multi-stage pipeline:
+The Nextar system implements **two distinct architectural paths** for comparative research analysis:
 
-1. **Image Ingestion**: User uploads an image via the Gradio UI
-2. **Object Detection**: YOLO11n identifies all objects in the scene with bounding boxes
-3. **Visual Explanation**: Grad-CAM generates attention heatmaps highlighting model reasoning
-4. **Scene Understanding**: LLM  generates a natural Pidgin English description based on detected objects and attention regions
-5. **Audio Synthesis**: Afro-TTS converts the description to speech with Nigerian English accent
-6. **Logging**: All interactions (detections, descriptions, audio) are recorded to SQLite database
+### **Path 1: Modular Pipeline** (Original - `ui.py`)
+Offline-first approach emphasizing explainability through component isolation:
+1. **Image Ingestion**: User uploads via Gradio
+2. **Object Detection**: YOLO11n identifies objects with bounding boxes
+3. **Visual Explanation**: Grad-CAM (MobileNetV3) generates attention heatmaps showing model reasoning
+4. **Scene Understanding**: Gemini API or Claude API generates English description
+5. **Audio Synthesis**: Afro-TTS converts description to speech with Nigerian English accent
+6. **Logging**: Interactions recorded with `phase1` tag in SQLite
 
-**Output**: User receives:
-- Annotated image with detected objects
-- Attention heatmap showing focus areas
-- Scene description in Pidgin English (text)
-- Audio narration of the scene
+**Output**: Annotated image, attention heatmap, text description, audio narration
+
+**Strengths**: Privacy (offline), interpretable attention maps, modular debugging
+**Challenges**: Latency (~5-12s), LLM vision understanding limited to text descriptions
+
+---
+
+### **Path 2: Multimodal End-to-End** (New - `uiv2.py`)
+Unified API-first approach leveraging vision-language models:
+1. **Image Ingestion**: User uploads via Gradio
+2. **Unified Analysis**: Google Gemini multimodal model analyzes image directly
+3. **Dynamic Bounding Box Generation**: Extracts object coordinates from Gemini response
+4. **Scene Understanding**: Gemini generates complete description and bounding boxes in single inference
+5. **HTML Rendering**: CSS-based bounding box visualization overlaid on image
+6. **Audio Synthesis**: Afro-TTS converts description to speech
+7. **Logging**: Interactions recorded with `phase2` tag in SQLite
+
+**Output**: HTML interactive visualization with bounding boxes, text description, audio narration
+
+**Strengths**: End-to-end multimodal understanding, faster inference, native bounding box generation
+**Tradeoffs**: Requires API access (not offline), lacks explicit attention mechanisms
 
 ---
 
 ## Infrastructure & Architecture
 
-### Core Components
+### **Path 1: Modular Explainable Pipeline** (`ui.py`)
 
 #### 1. **Object Detection** (`src/inference.py`)
 - **Model**: YOLO11n (nano version optimized for CPU)
-- **Why YOLO11n**: 3-4x faster than YOLO11s with acceptable accuracy for scene description
-- **Performance**: ~100-200ms per image on modern CPU
-- **Inputs**: Image file path or PIL Image
+- **Performance**: ~100-200ms per image
 - **Outputs**: Bounding boxes, class labels, confidence scores
 
 #### 2. **Explainable AI** (`src/xai.py`)
-- **Primary XAI Method**: Grad-CAM (Gradient-weighted Class Activation Mapping)
+- **Method**: Grad-CAM (Gradient-weighted Class Activation Mapping)
 - **Model**: MobileNetV3-Large (lightweight, CPU-friendly)
-- **Why Separate Model**: YOLO's multi-scale detection head is not amenable to layer attribution. Instead, we crop the primary detected object and run MobileNetV3 on that crop for focused explanation.
-- **Performance**: ~800ms-1.5s per image on CPU
-- **Outputs**: 
-  - Heatmap visualization (attention map)
-  - Region descriptions (center, edges, etc.)
-  - Overlay visualization
+- **Purpose**: Generate attention heatmaps showing visual focus regions
+- **Performance**: ~800ms-1.5s per image
+- **Outputs**: Attention heatmap, region descriptions, overlay visualization
 
 #### 3. **Natural Language Generation** (`src/explainer.py`)
-- **Tier 1 (Primary)**: Ollama + Gemma 3:1B (local, offline, ~2-5s)
-- **Tier 2 (Fallback)**: Claude API via Anthropic (if API key provided)
-- **Tier 3 (Minimum)**: Hardcoded fallback string
-- **Output Language**: Pidgin English with natural, context-aware phrasing
-- **Process**: Converts detected objects + heatmap region into natural description via LLM prompt
+- **Tier 1**: Gemini(local, offline, ~2-5s)
+- **Tier 2**: Claude API via Anthropic (fallback)
+- **Output**:  English description based on detected objects + attention regions
 
 #### 4. **Text-to-Speech** (`src/tts.py`)
-- **Model**: Afro-TTS (XTTS-based, trained on African languages)
-- **Voice**: Nigerian English accent with pre-recorded reference audio
-- **Performance**: ~2-5s per sentence on CPU
-- **Output Format**: 16kHz WAV files
-- **Features**: Batch processing support, concurrent synthesis
+- **Model**: Afro-TTS (XTTS-based, Nigerian English accent)
+- **Performance**: ~2-5s per sentence
+
+---
+
+### **Path 2: Unified Multimodal Architecture** (`uiv2.py`)
+
+#### 1. **Unified Vision-Language Analysis** (`src/explainer.py` - Gemini mode)
+- **Model**: Google Gemini Pro Vision (multimodal)
+- **Architecture**: Single inference endpoint handles detection, localization, and description
+- **Inputs**: Raw image
+- **Outputs**: 
+  - Object list with 2D bounding box coordinates (normalized 0-1000 scale)
+  - Scene description in  English
+  - All analysis in one API call (~2-5s)
+
+#### 2. **Dynamic Bounding Box Rendering** (HTML/CSS in `uiv2.py`)
+- **Method**: `render_bounding_boxes()` function creates HTML overlay
+- **Format**: Base64-encoded image with CSS-positioned boxes
+- **Visualization**: Interactive bounding boxes with labels
+- **No separate XAI model needed**: Coordinates extracted directly from Gemini response
+
+#### 3. **Text-to-Speech** (`src/tts.py`)
+- **Same as Path 1**: Afro-TTS with Nigerian English accent
+- **Performance**: ~2-5s per sentence
 
 #### 5. **Web API** (`src/api.py`)
 - **Framework**: FastAPI with CORS middleware
@@ -149,7 +180,7 @@ nextar_assistive_vision_research/
 - **Computer Vision**: `ultralytics` (YOLO), `opencv-python`, `torchvision`
 - **XAI**: `grad-cam`, `torch`
 - **TTS**: `coqui-tts` (Afro-TTS), `torchaudio`
-- **LLM**: `ollama` (local), Anthropic API (optional)
+- **LLM**: Gemini API , Anthropic API (optional)
 - **Web/UI**: `fastapi`, `gradio`
 - **Audio**: `scipy`
 - **ML/Data**: `numpy`, `pandas`, `transformers`, `pillow`
@@ -193,20 +224,33 @@ See `pyproject.toml` for complete dependency list and versions.
 
 ## Running the Application
 
-### Gradio UI (Recommended)
+### **Path 1: Modular Explainable Pipeline** (Original Architecture)
 ```bash
 python src/ui.py
 ```
 - Opens at `http://localhost:7860`
-- Drag & drop or upload an image
-- See real-time detection, heatmap, Pidgin description, and audio output
+- Offline-first with explicit attention visualization
+- Full visibility into each processing step
+- Database logs as `phase1`
+
+### **Path 2: Unified Multimodal Architecture** (New Architecture)
+```bash
+python src/uiv2.py
+```
+- Opens at `http://localhost:7860`
+- Requires Google Gemini API key (`GOOGLE_API_KEY` environment variable)
+- Single unified analysis with dynamic bounding boxes
+- Database logs as `phase2`
+- **Note**: Set `GOOGLE_API_KEY` before running
+
+---
 
 ### FastAPI Backend
 ```bash
 python -m uvicorn src.api:app --reload --port 8000
 ```
 - Swagger UI: `http://localhost:8000/docs`
-- Available endpoints: `/speak`, `/detect`, `/explain`, etc.
+- Supports both Path 1 and Path 2 endpoints
 
 ### Test Script
 ```bash
@@ -215,47 +259,135 @@ python main.py
 
 ---
 
-## Performance Metrics
+## Performance & Comparative Analysis
 
-| Component | Model | Latency (CPU) | Hardware Assumed |
-|-----------|-------|---------------|------------------|
-| Object Detection | YOLO11n | 100-200ms | Modern CPU |
-| Grad-CAM | MobileNetV3 | 800-1500ms | Modern CPU |
-| LLM (Pidgin Gen) | Ollama + Gemma 3:1B | 2-5s | Modern CPU |
-| TTS | Afro-TTS XTTS | 2-5s per sentence | Modern CPU |
-| **Total Pipeline** | - | ~5-12s | Modern CPU |
+### **Path 1: Modular Pipeline**
+
+| Component | Model | Latency (CPU) |
+|-----------|-------|---------------|
+| Object Detection | YOLO11n | 100-200ms |
+| Grad-CAM XAI | MobileNetV3 | 800-1500ms |
+| LLM (Pidgin Gen) | GEmini | 2-5s |
+| TTS | Afro-TTS XTTS | 2-5s per sentence |
+| **Total Pipeline** | - | **5-12s** |
+
+**Advantages**:
+- Fully offline-first (privacy-preserving)
+- Explicit attention visualization for interpretability
+- Modular debugging and component replacement
+- Predictable, controlled inference pipeline
+
+**Limitations**:
+- Higher latency due to sequential processing
+- LLM has limited vision understanding (text-only input)
+- Requires local model downloads and resources
+
+---
+
+### **Path 2: Unified Multimodal**
+
+| Component | Model | Latency |
+|-----------|-------|---------|
+| Unified Analysis | Google Gemini Pro Vision | 2-5s |
+| Bounding Box Rendering | HTML/CSS | <100ms |
+| TTS | Afro-TTS XTTS | 2-5s per sentence |
+| **Total Pipeline** | - | **4-10s** |
+
+**Advantages**:
+- Lower latency (single API call vs. multi-stage pipeline)
+- Native multimodal understanding (vision + language jointly)
+- Automatic bounding box generation
+- Simpler architecture, fewer components
+
+**Limitations**:
+- Requires API key (not offline)
+- Lacks explicit attention visualization
+- API dependency and cost considerations
+- Less component-level interpretability
+
+---
+
+### **Research Value**
+
+This dual-path implementation enables comparative research on:
+1. **Latency vs. Interpretability**: Offline modular approach vs. unified multimodal speed
+2. **Explainability Trade-offs**: Explicit Grad-CAM heatmaps vs. implicit multimodal reasoning
+3. **Accuracy Assessment**: YOLO+LLM vs. Gemini's native vision understanding
+4. **Accessibility Trade-offs**: Privacy (offline) vs. performance (cloud API)
+5. **Resource Requirements**: CPU-only vs. API-dependent architectures
 
 ---
 
 ## Research Applications
 
-This system is designed for:
-- **Accessibility Research**: Evaluating assistive vision quality for visually impaired users
-- **XAI in Practice**: Real-world testing of Grad-CAM explanations
-- **Multilingual TTS**: African language synthesis research
-- **Human-Computer Interaction**: User studies on scene understanding
-- **AI Ethics**: Bias detection in object detection and explanation generation
+This system supports two distinct research paradigms:
+
+**Path 1 - Modular Explainability Research**:
+- Accessibility evaluation with local inference (privacy-first)
+- XAI methodology testing (Grad-CAM attention analysis)
+- Component-level bias detection (object detection vs. explanation generation)
+- Resource-constrained deployment scenarios
+- Offline system reliability
+
+**Path 2 - End-to-End Multimodal Research**:
+- Vision-language model performance in accessibility contexts
+- API-dependent assistive system design trade-offs
+- Unified multimodal understanding vs. modular approaches
+- Real-world deployment feasibility
+- Cost-performance analysis for cloud-based assistive AI
+
+**Comparative Research Goals**:
+- Latency vs. interpretability trade-offs in assistive AI
+- Privacy (offline) vs. performance (cloud APIs) for visually impaired users
+- Explicit XAI (Grad-CAM) vs. implicit multimodal reasoning
+- Modular debugging capabilities vs. end-to-end robustness
+- Multilingual TTS effectiveness with different vision architectures
 
 ---
 
 ## Key Design Decisions
 
-1. **YOLO11n over larger models**: Prioritizes CPU efficiency without sacrificing accuracy for scene description
-2. **Separate MobileNetV3 for XAI**: YOLO's architecture is incompatible with layer attribution; cropping + MobileNetV3 provides clean explanations
-3. **Tiered LLM approach**: Offline Ollama for privacy/speed, with Claude fallback for better quality
-4. **Pidgin English focus**: Natural language for diverse African audiences with linguistic authenticity
-5. **SQLite logging**: Lightweight, portable database for research data collection
+**Path 1 (Modular Pipeline)**:
+1. **YOLO11n over larger models**: CPU efficiency without sacrificing scene description accuracy
+2. **Separate MobileNetV3 for XAI**: Clean layer attribution for attention visualization
+3. **Tiered LLM approach**: Offline Ollama primary, Claude fallback for quality comparison
+4. **Pidgin English focus**: Natural language for diverse African audiences
+5. **Offline-first**: Privacy and reliability for assistive AI
+
+**Path 2 (Unified Multimodal)**:
+1. **Gemini multimodal**: Native vision-language understanding in single inference
+2. **API-first architecture**: Leverage latest models without local deployment
+3. **Dynamic bounding box extraction**: Reduce complexity vs. separate detection
+4. **HTML/CSS rendering**: Interactive visualization without additional ML models
+5. **Comparative research**: Demonstrate trade-offs between architectures
+
+**Unified Design**:
+- **SQLite logging with phase tagging**: Track both architectures in shared database
+- **Shared TTS pipeline**: Consistent audio output across both paths
+- **Modular Gradio interfaces**: Independent UIs for each architecture (`ui.py` vs. `uiv2.py`)
 
 ---
 
 ## Future Enhancements
 
+**Path 1 Improvements**:
+- GPU acceleration for detection and XAI
 - Real-time video processing
-- Multi-modal input (camera feed, audio input)
-- Fine-tuned LLM for better Pidgin generation
-- GPU acceleration options
-- Mobile deployment (Flutter/React Native UI)
-- User feedback loop for model refinement
+- Fine-tuned local LLM for better Pidgin generation
+- Advanced XAI methods beyond Grad-CAM (LIME, SHAP)
+
+**Path 2 Improvements**:
+- Model comparison (Gemini vs. other multimodal models)
+- Cost optimization and caching strategies
+- Offline fallback mechanisms
+- Custom bounding box refinement
+
+**Cross-Path Research**:
+- User study comparing explanatory quality (heatmaps vs. multimodal)
+- Latency vs. accuracy trade-off analysis
+- Privacy vs. performance user preferences
+- Accessibility effectiveness measurement
+- Mobile deployment of both architectures
 
 ---
 
