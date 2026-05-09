@@ -142,7 +142,7 @@ def build_pidgin_from_scene(
     print("[Explainer] Using groq fallback (gemini not available).")
     return _call_groq(prompt)
 
-
+import re
 
 def build_pidgin_from_image(image_path: str) -> str:
     import base64
@@ -161,18 +161,17 @@ def build_pidgin_from_image(image_path: str) -> str:
 
     prompt = """You are helping a visually impaired person understand the scene/setting in front of them.
 
-Analyse this image carefully and write 2-3 sentences under 100 characters describing the scene in front of you. Focus on the most important and relevant details that would help a visually impaired person understand what is in the image. Use the following structure:
+Analyse this image carefully and write 2-3 sentences. Do not exceed 250 characters total, describing the scene in front of you. Focus on the most important and relevant details that would help a visually impaired person understand what is in the image. Use the following structure:
 1. First in natural English describing the scene — what objects are present, 
    where they are, what activity or context is implied.
 
 Rules:
-- Write only the sentences which must be under 100 characters, nothing else"
+- Write only the sentences which must be under  250 characters total, nothing else"
 - No preamble, no quotation marks
 - Sound like a friendly helpful person talking naturally
 - return a JSON object with exactly this structure:
 {
   "description_english": "...",
-  "description_pidgin": "...",
   "objects": [
     {
       "label": "person",
@@ -190,15 +189,22 @@ Return only valid JSON, no markdown fences, no preamble."""
         contents=[
             types.Part.from_bytes(data=base64.b64decode(image_bytes), mime_type=mime),
             types.Part.from_text(text=prompt)
-        ]
+        ],
     )
+
+    raw = response.text
+    
     try:
-        parsed = json.loads(raw)
+        start_index = raw.find('{')
+    
+        if start_index != -1:
+            json_part = raw[start_index:]
+            parsed = json.loads(json_part)
+            print(parsed)
     except json.JSONDecodeError:
         # Graceful fallback if Gemini doesn't return clean JSON
         parsed = {
             "description_english": raw,
-            "description_pidgin": raw,
             "objects": []
         }
     return parsed

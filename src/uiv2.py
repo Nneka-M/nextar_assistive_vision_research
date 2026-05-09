@@ -67,23 +67,25 @@ def render_bounding_boxes(image_path: str, gemini_objects: list) -> str:
 def run_pipiline(image):
 
     scene_description = build_pidgin_from_image(image)
-    audio_path = synthesise_sentences(scene_description, tts_model=tts_model, config=tts_config, reference_wav=REFERENCE_WAV)
-    box_html = render_bounding_boxes(image, scene_description["objects"])  # Placeholder: pass actual detected objects here
-    log_detection(image, 'phase2', [], "", scene_description, audio_path)
-    return image, image, scene_description, audio_path
+    english= scene_description.get("description_english")
+    print(f"[Scene Description] {english}")
+    audio_path = synthesise_sentences(english, tts_model=tts_model, config=tts_config, reference_wav=REFERENCE_WAV)
+    objects = scene_description.get("objects", [])  # this is what goes into render_bounding_boxes
+
+    box_html = render_bounding_boxes(image, objects)  # Placeholder: pass actual detected objects here
+    log_detection(image, 'phase2', [], "", english, audio_path)
+    return box_html, english, audio_path
 
 demo= gr.Interface(
     fn=run_pipiline,
     inputs=gr.Image(type="filepath", label ="upload or capture image"),
     outputs=[
         gr.HTML(label="Detected Objects with Bounding Boxes"),
-        gr.Image(label="Detected Objects"),
-        gr.Image( label="Attention heatmap"),
-        gr.Textbox(label="Scene Description (Pidgin English)"),
+        gr.Textbox(label="Scene Description (English)"),
         gr.Audio(label="Audio Description", autoplay=True)
     ],
     title="Nextar - Assistive Vision (Prototype)",
-    description= "Upload an image to see detected objects, attention heatmap, a scene description in  English, and hear the audio description."
+    description= "Upload an image to see detected objects, a scene description in  English, and hear the audio description in a Nigerian accent."
 )
 
 demo.launch(share=True)

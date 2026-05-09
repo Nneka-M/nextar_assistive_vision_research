@@ -18,12 +18,17 @@ def init_db():
             audio_path TEXT NOT NULL
         )
     ''')
+    columns = [row[1] for row in conn.execute("PRAGMA table_info(interactions)")]
+    if "phase" not in columns:
+        conn.execute("ALTER TABLE interactions ADD COLUMN phase TEXT")
+        print("[DB] Migrated: added phase column")
+
     conn.commit()
     conn.close()
 
 def log_detection(image_path, phase, detections, heatmap_region, scene_description, audio_path):
-    con = sqlite3.connect(DB_PATH)
-    cursor = con.cursor()
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
     cursor.execute("INSERT INTO interactions (timestamp, phase, image_path, detections, heatmap_region, scene_description, audio_path) VALUES (?, ?, ?, ?, ?, ?, ?)", (time.time(), phase, image_path, json.dumps(detections), json.dumps(heatmap_region), scene_description, audio_path))
-    con.commit()
-    con.close()
+    conn.commit()
+    conn.close()
